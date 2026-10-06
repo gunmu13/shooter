@@ -6,7 +6,7 @@
 <title>双人射击对战</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;user-select:none}
+*{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-tap-highlight-color:transparent}
 body{background:#0a0a1a;overflow:hidden;touch-action:none;font-family:sans-serif;color:#fff}
 canvas{display:block;width:100vw;height:100vh}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;z-index:10}
@@ -24,9 +24,9 @@ canvas{display:block;width:100vw;height:100vh}
 #shootBtn{bottom:60px;right:30px;width:80px;height:80px;background:#e94560;font-size:1rem}
 #slideBtn{bottom:40px;right:130px;width:60px;height:60px;background:#0ea5e9;font-size:.8rem}
 #aimBtn{bottom:40px;right:210px;width:60px;height:60px;background:#f59e0b;font-size:.8rem}
-.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:350px}
-.menu-btn{background:#1a1a3a;border:1px solid #333;padding:20px 10px;border-radius:10px;text-align:center;cursor:pointer}
-.menu-btn.active{background:#e94560;border-color:#e94560}
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:350px;margin-top:10px}
+.menu-btn{background:#1a1a3a;border:1px solid #333;padding:20px 10px;border-radius:10px;text-align:center;cursor:pointer;font-size:1rem}
+.menu-btn:active{background:#e94560;border-color:#e94560}
 </style>
 </head>
 <body>
@@ -39,28 +39,40 @@ canvas{display:block;width:100vw;height:100vh}
 <button id="slideBtn" class="btn hidden">滑铲</button>
 <button id="aimBtn" class="btn hidden">瞄准</button>
 
+<!-- 主菜单 -->
 <div id="home" class="overlay">
   <h2>🔫 双人射击对战</h2>
-  <div style="margin-bottom:10px;color:#aaa">选择模式：</div>
-  <div class="menu-grid">
-    <div class="menu-btn active" data-mode="single">单人 vs AI</div>
-    <div class="menu-btn" data-mode="rifle">步枪对战</div>
-    <div class="menu-btn" data-mode="shotgun">散弹枪对战</div>
-    <div class="menu-btn" data-mode="sniper">狙击枪对战</div>
-  </div>
-  <button onclick="startGame()" style="margin-top:20px">开始游戏</button>
-  <div style="color:#666;margin:10px 0">—— 或者联机 ——</div>
-  <button onclick="createRoom()" style="background:#0ea5e9">创建房间</button>
-  <input id="roomCode" placeholder="输入房间号" maxlength="6" style="text-transform:uppercase">
-  <button onclick="joinRoom()" style="background:#0ea5e9">加入房间</button>
+  <button onclick="showSingleMenu()" style="background:#0ea5e9">选项一：单人模式</button>
+  <button onclick="showMultiMenu()" style="background:#f59e0b">选项二：联机对决</button>
 </div>
 
+<!-- 单人模式菜单 -->
+<div id="singleMenu" class="overlay hidden">
+  <h2>选择武器（单人）</h2>
+  <button onclick="startGame('single', 'rifle')" style="background:#0ea5e9">步枪模式</button>
+  <button onclick="startGame('single', 'shotgun')" style="background:#e94560">散弹枪模式</button>
+  <button onclick="startGame('single', 'sniper')" style="background:#f59e0b">狙击枪模式</button>
+  <button onclick="backToHome()" style="background:#333;margin-top:20px">返回</button>
+</div>
+
+<!-- 联机模式菜单 -->
+<div id="multiMenu" class="overlay hidden">
+  <h2>选择武器（联机）</h2>
+  <button onclick="startMulti('rifle')" style="background:#0ea5e9">步枪联机</button>
+  <button onclick="startMulti('shotgun')" style="background:#e94560">散弹枪联机</button>
+  <button onclick="startMulti('sniper')" style="background:#f59e0b">狙击枪联机</button>
+  <button onclick="backToHome()" style="background:#333;margin-top:20px">返回</button>
+</div>
+
+<!-- 等待好友 -->
 <div id="wait" class="overlay hidden">
   <h2>等待对手加入...</h2>
   <p id="myCode" style="margin:20px 0;font-size:2rem;color:#e94560;font-weight:bold"></p>
   <p style="color:#888">把上面的房间号发给好友</p>
+  <button onclick="backToHome()" style="background:#333;margin-top:20px">取消</button>
 </div>
 
+<!-- 结束画面 -->
 <div id="over" class="overlay hidden">
   <h2 id="overText"></h2>
   <button onclick="location.reload()" style="margin-top:20px">再来一局</button>
@@ -84,20 +96,13 @@ let gameActive = false;
 let conn = null, peer = null, isHost = true;
 
 let me = { x: 200, y: 300, hp: 100, kills: 0, alive: true, angle: 0, weapon: 'rifle', ammo: 30, isReloading: false, reloadTimer: 0, isSliding: false, slideTimer: 0 };
-let opp = { x: 600, y: 300, hp: 100, kills: 0, alive: true, angle: 0, weapon: 'rifle', ammo: 30, isReloading: false, reloadTimer: 0, isSliding: false, slideTimer: 0 };
+let opp = { x: 600, y: 300, hp: 100, kills: 0, alive: true, angle: 0, weapon: 'rifle', ammo: 30, isReloading: false, reloadTimer: 0, isSliding: false, slideTimer: 0, respawnTimer: 0 };
 let bullets = [];
 let obstacles = [];
 let keys = { up: 0, down: 0, left: 0, right: 0, shoot: 0, slide: 0, aim: 0 };
 let shootCooldown = 0;
 let respawnTimer = null;
 let aiTimer = 0;
-
-function setWeapon(w) {
-  me.weapon = w;
-  me.ammo = WEAPONS[w].mag;
-  me.isReloading = false;
-  updateWeaponUI();
-}
 
 function updateWeaponUI() {
   document.getElementById('aimBtn').classList.toggle('hidden', me.weapon !== 'sniper');
@@ -118,13 +123,42 @@ function initMap() {
 
 function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 
+// ================== 菜单逻辑 ==================
+function backToHome() {
+  document.getElementById('home').classList.remove('hidden');
+  document.getElementById('singleMenu').classList.add('hidden');
+  document.getElementById('multiMenu').classList.add('hidden');
+  document.getElementById('wait').classList.add('hidden');
+}
+
+function showSingleMenu() {
+  document.getElementById('home').classList.add('hidden');
+  document.getElementById('singleMenu').classList.remove('hidden');
+}
+
+function showMultiMenu() {
+  document.getElementById('home').classList.add('hidden');
+  document.getElementById('multiMenu').classList.remove('hidden');
+}
+
+function startMulti(weapon) {
+  gameMode = 'multi';
+  myWeapon = weapon;
+  document.getElementById('multiMenu').classList.add('hidden');
+  document.getElementById('wait').classList.remove('hidden');
+}
+
 // ================== 游戏循环 ==================
 function gameLoop() {
   if (!gameActive) return requestAnimationFrame(gameLoop);
 
   const speed = WEAPONS[me.weapon].speed;
 
-  if (me.slideTimer > 0) { me.slideTimer--; }
+  // 修复滑铲速度
+  if (me.slideTimer > 0) { 
+    me.slideTimer--; 
+    if (me.slideTimer <= 0) me.isSliding = false; 
+  }
   if (keys.slide && me.slideTimer <= 0) {
     me.isSliding = true; me.slideTimer = 30; keys.slide = 0;
   }
@@ -170,7 +204,7 @@ function gameLoop() {
     me.ammo--;
     shootCooldown = w.fireRate;
     if (me.ammo <= 0) { me.isReloading = true; me.reloadTimer = w.reload; }
-    if (conn) conn.send({ type: 'shoot', x: me.x, y: me.y, angle: me.angle, weapon: me.weapon });
+    if (conn && conn.open) conn.send({ type: 'shoot', x: me.x, y: me.y, angle: me.angle, weapon: me.weapon });
   }
 
   bullets = bullets.filter(b => {
@@ -182,38 +216,58 @@ function gameLoop() {
     if (b.owner === 'me' && opp.alive) {
       if (dist(b.x, b.y, opp.x, opp.y) < 22) { 
         opp.hp -= b.damage; 
-        if(opp.hp<=0){opp.hp=0;opp.alive=false;me.kills++;if(conn)conn.send({type:'died'})}
+        if (opp.hp <= 0) {
+          opp.hp = 0; opp.alive = false; me.kills++;
+          // 修复AI复活：设置AI复活倒计时
+          opp.respawnTimer = 120; 
+          if (conn && conn.open) conn.send({type:'died'});
+        }
         return false; 
       }
     }
     return true;
   });
 
-  if (me.kills >= 5 && gameActive) { gameActive = false; document.getElementById('overText').textContent = '🏆 你赢了！'; document.getElementById('over').classList.remove('hidden'); }
+  if (me.kills >= 5 && gameActive) { 
+    gameActive = false; 
+    document.getElementById('overText').textContent = '🏆 你赢了！'; 
+    document.getElementById('over').classList.remove('hidden'); 
+  }
 
-  if (gameMode === 'single' && opp.alive && me.alive) {
-    aiTimer--;
-    if (aiTimer <= 0) {
-      const dx = me.x - opp.x, dy = me.y - opp.y;
-      opp.angle = Math.atan2(dy, dx);
-      if (dist(opp.x, opp.y, me.x, me.y) > 200) {
-        opp.x += Math.cos(opp.angle) * speed * 0.8;
-        opp.y += Math.sin(opp.angle) * speed * 0.8;
-      } else {
-        if (Math.random() < 0.3 && !opp.isReloading && opp.ammo > 0) {
-          const w = WEAPONS[opp.weapon];
-          bullets.push({ x: opp.x + Math.cos(opp.angle) * 25, y: opp.y + Math.sin(opp.angle) * 25, vx: Math.cos(opp.angle) * 10, vy: Math.sin(opp.angle) * 10, owner: 'opp', damage: w.damage, life: 100, color: w.color });
-          opp.ammo--;
-          if (opp.ammo <= 0) { opp.isReloading = true; opp.reloadTimer = w.reload; }
-        }
+  // 单人模式 AI 逻辑
+  if (gameMode === 'single' && me.alive) {
+    // 修复AI复活
+    if (!opp.alive) {
+      opp.respawnTimer--;
+      if (opp.respawnTimer <= 0) {
+        opp.hp = 100; opp.alive = true;
+        opp.x = 100 + Math.random() * (W - 200);
+        opp.y = 100 + Math.random() * (H - 200);
       }
-      opp.x = Math.max(20, Math.min(W - 20, opp.x));
-      opp.y = Math.max(20, Math.min(H - 20, opp.y));
-      aiTimer = 10;
-    }
-    if (opp.isReloading) {
-      opp.reloadTimer -= 16;
-      if (opp.reloadTimer <= 0) { opp.isReloading = false; opp.ammo = WEAPONS[opp.weapon].mag; }
+    } else {
+      aiTimer--;
+      if (aiTimer <= 0) {
+        const dx = me.x - opp.x, dy = me.y - opp.y;
+        opp.angle = Math.atan2(dy, dx);
+        if (dist(opp.x, opp.y, me.x, me.y) > 200) {
+          opp.x += Math.cos(opp.angle) * speed * 0.8;
+          opp.y += Math.sin(opp.angle) * speed * 0.8;
+        } else {
+          if (Math.random() < 0.3 && !opp.isReloading && opp.ammo > 0) {
+            const w = WEAPONS[opp.weapon];
+            bullets.push({ x: opp.x + Math.cos(opp.angle) * 25, y: opp.y + Math.sin(opp.angle) * 25, vx: Math.cos(opp.angle) * 10, vy: Math.sin(opp.angle) * 10, owner: 'opp', damage: w.damage, life: 100, color: w.color });
+            opp.ammo--;
+            if (opp.ammo <= 0) { opp.isReloading = true; opp.reloadTimer = w.reload; }
+          }
+        }
+        opp.x = Math.max(20, Math.min(W - 20, opp.x));
+        opp.y = Math.max(20, Math.min(H - 20, opp.y));
+        aiTimer = 10;
+      }
+      if (opp.isReloading) {
+        opp.reloadTimer -= 16;
+        if (opp.reloadTimer <= 0) { opp.isReloading = false; opp.ammo = WEAPONS[opp.weapon].mag; }
+      }
     }
   }
 
@@ -237,7 +291,6 @@ function render() {
 
   bullets.forEach(b => { ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, 7); ctx.fill(); });
 
-  // 狙击枪红线
   if (me.weapon === 'sniper' && keys.aim > 0 && me.alive) {
     ctx.strokeStyle = 'rgba(255,0,0,0.6)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(me.x, me.y);
@@ -254,77 +307,47 @@ function render() {
 function drawPlayer(p, c) {
   if (!p.alive) return;
   ctx.fillStyle = c; ctx.beginPath(); ctx.arc(p.x, p.y, 20, 0, 7); ctx.fill();
-  
-  // 画枪械模型
   drawWeapon(p.x, p.y, p.angle, p.weapon);
-
   ctx.fillStyle = '#333'; ctx.fillRect(p.x - 25, p.y - 38, 50, 6);
   ctx.fillStyle = c; ctx.fillRect(p.x - 25, p.y - 38, 50 * (p.hp / 100), 6);
-  
   ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(WEAPONS[p.weapon].name, p.x, p.y - 45);
 }
 
-// === 这里是全新加入的枪械模型绘制代码 ===
 function drawWeapon(x, y, angle, weapon) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
 
   if (weapon === 'rifle') {
-    // 步枪（AR风格）：黑色枪身，橄榄绿护木和枪托，带弹匣
-    ctx.fillStyle = '#2a2a2a'; // 枪身主体
-    ctx.fillRect(0, -4, 40, 8);
-    ctx.fillStyle = '#3a3a3a'; // 枪管
-    ctx.fillRect(40, -2, 25, 4);
-    ctx.fillStyle = '#4a5a3a'; // 护木
-    ctx.fillRect(15, -5, 20, 10);
-    ctx.fillStyle = '#2a2a2a'; // 弹匣
-    ctx.fillRect(10, 4, 8, 15);
-    ctx.fillStyle = '#4a5a3a'; // 枪托
-    ctx.fillRect(-25, -5, 25, 10);
-    ctx.fillStyle = '#111'; // 瞄准镜导轨
-    ctx.fillRect(5, -8, 15, 4);
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(0, -4, 40, 8);
+    ctx.fillStyle = '#3a3a3a'; ctx.fillRect(40, -2, 25, 4);
+    ctx.fillStyle = '#4a5a3a'; ctx.fillRect(15, -5, 20, 10);
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(10, 4, 8, 15);
+    ctx.fillStyle = '#4a5a3a'; ctx.fillRect(-25, -5, 25, 10);
+    ctx.fillStyle = '#111'; ctx.fillRect(5, -8, 15, 4);
   } 
   else if (weapon === 'shotgun') {
-    // 散弹枪：粗枪管，木质护木和枪托
-    ctx.fillStyle = '#2a2a2a'; // 枪管
-    ctx.fillRect(0, -5, 35, 10);
-    ctx.fillStyle = '#3a3a3a'; // 枪管口
-    ctx.fillRect(35, -6, 15, 12);
-    ctx.fillStyle = '#6b4c3a'; // 木质护木
-    ctx.fillRect(10, -7, 15, 14);
-    ctx.fillStyle = '#2a2a2a'; // 泵动部件
-    ctx.fillRect(12, -8, 10, 16);
-    ctx.fillStyle = '#6b4c3a'; // 木质枪托
-    ctx.fillRect(-30, -6, 30, 12);
-    ctx.fillStyle = '#111'; // 顶部导轨
-    ctx.fillRect(0, -10, 20, 4);
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(0, -5, 35, 10);
+    ctx.fillStyle = '#3a3a3a'; ctx.fillRect(35, -6, 15, 12);
+    ctx.fillStyle = '#6b4c3a'; ctx.fillRect(10, -7, 15, 14);
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(12, -8, 10, 16);
+    ctx.fillStyle = '#6b4c3a'; ctx.fillRect(-30, -6, 30, 12);
+    ctx.fillStyle = '#111'; ctx.fillRect(0, -10, 20, 4);
   } 
   else if (weapon === 'sniper') {
-    // 狙击枪：长枪管，大瞄准镜，两脚架
-    ctx.fillStyle = '#1a1a1a'; // 枪身
-    ctx.fillRect(0, -4, 45, 8);
-    ctx.fillStyle = '#2a2a2a'; // 长枪管
-    ctx.fillRect(45, -3, 40, 6);
-    ctx.fillStyle = '#111'; // 瞄准镜
-    ctx.fillRect(10, -14, 30, 8);
-    ctx.fillStyle = '#333'; // 瞄准镜支架
-    ctx.fillRect(15, -6, 5, 4);
-    ctx.fillRect(30, -6, 5, 4);
-    ctx.fillStyle = '#4a5a3a'; // 枪托
-    ctx.fillRect(-30, -6, 30, 12);
-    // 两脚架
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, -4, 45, 8);
+    ctx.fillStyle = '#2a2a2a'; ctx.fillRect(45, -3, 40, 6);
+    ctx.fillStyle = '#111'; ctx.fillRect(10, -14, 30, 8);
+    ctx.fillStyle = '#333'; ctx.fillRect(15, -6, 5, 4); ctx.fillRect(30, -6, 5, 4);
+    ctx.fillStyle = '#4a5a3a'; ctx.fillRect(-30, -6, 30, 12);
     ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(25, 4); ctx.lineTo(20, 20); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(25, 4); ctx.lineTo(30, 20); ctx.stroke();
-    ctx.fillStyle = '#111'; // 弹匣
-    ctx.fillRect(15, 4, 8, 12);
+    ctx.fillStyle = '#111'; ctx.fillRect(15, 4, 8, 12);
   }
-
   ctx.restore();
 }
-// === 枪械模型绘制代码结束 ===
 
 // ================== 控制事件 ==================
 const joystick = document.getElementById('joystick'), knob = document.getElementById('knob');
@@ -351,7 +374,6 @@ onkeydown = e => { const k = e.key.toLowerCase(); if (k == 'w') keys.up = 1; if 
 onkeyup = e => { const k = e.key.toLowerCase(); if (k == 'w') keys.up = 0; if (k == 's') keys.down = 0; if (k == 'a') keys.left = 0; if (k == 'd') keys.right = 0; if (k == ' ') keys.shoot = 0; if (k == 'shift') keys.slide = 0; };
 
 // ================== 联机通信 ==================
-function send(d) { if (conn && conn.open) conn.send(d); }
 function handleMessage(d) {
   if (d.type == 'state') {
     opp.x = d.x; opp.y = d.y; opp.hp = d.hp; opp.kills = d.kills; opp.alive = d.alive; opp.angle = d.angle;
@@ -368,21 +390,23 @@ function handleMessage(d) {
   } else if (d.type == 'died') { me.kills++; }
 }
 
-function startGame() {
+function startGame(mode, weapon) {
+  gameMode = mode;
   gameActive = true;
-  gameMode = document.querySelector('.menu-btn.active').dataset.mode;
-  me.weapon = gameMode === 'shotgun' ? 'shotgun' : gameMode === 'sniper' ? 'sniper' : 'rifle';
-  opp.weapon = me.weapon;
-  me.ammo = WEAPONS[me.weapon].mag; opp.ammo = WEAPONS[me.weapon].mag;
+  me.weapon = weapon;
+  opp.weapon = weapon;
+  me.ammo = WEAPONS[weapon].mag; opp.ammo = WEAPONS[weapon].mag;
 
   document.getElementById('home').classList.add('hidden');
+  document.getElementById('singleMenu').classList.add('hidden');
+  document.getElementById('multiMenu').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
   document.getElementById('joystick').classList.remove('hidden');
   document.getElementById('shootBtn').classList.remove('hidden');
   document.getElementById('slideBtn').classList.remove('hidden');
   updateWeaponUI();
 
-  if (gameMode === 'single') { opp.weapon = 'rifle'; opp.ammo = WEAPONS.rifle.mag; }
+  if (mode === 'single') { opp.weapon = weapon; opp.ammo = WEAPONS[weapon].mag; }
   initMap();
   if (!conn) gameLoop();
 }
@@ -392,7 +416,7 @@ function createRoom() {
   peer = new Peer('duelshooter-' + code, { debug: 1 });
   peer.on('open', () => {
     document.getElementById('myCode').textContent = code;
-    document.getElementById('home').classList.add('hidden');
+    document.getElementById('multiMenu').classList.add('hidden');
     document.getElementById('wait').classList.remove('hidden');
   });
   peer.on('connection', c => { conn = c; setupConnection(); });
